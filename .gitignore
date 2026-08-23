@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.hypothesis/
+
+components/obb_canvas/frontend/node_modules/
+components/obb_canvas/frontend/dist/
+
+.DS_Store

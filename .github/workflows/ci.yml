@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt pytest hypothesis
+      - run: pytest tests/ -q
+
+  component-build-guard:
+    runs-on: ubuntu-latest
+    # Streamlit Community Cloud serves components/obb_canvas/build/ as static files verbatim -
+    # it never runs `npm run build` itself. If that directory drifts from what
+    # frontend/src/ actually produces, the deployed app silently serves stale JS with no error
+    # anywhere - this job is the only thing that would catch it before it reaches production.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install component frontend deps
+        working-directory: components/obb_canvas/frontend
+        run: npm ci
+      - name: Build component frontend
+        working-directory: components/obb_canvas/frontend
+        run: npm run build
+      - name: Fail if build output differs from what's committed
+        run: |
+          if ! git diff --quiet -- components/obb_canvas/build; then
+            echo "::error::components/obb_canvas/build/ is stale - rebuild it (cd components/obb_canvas/frontend && npm run build) and commit the result."
+            git diff --stat -- components/obb_canvas/build
+            exit 1
+          fi

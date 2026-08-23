@@ -1,0 +1,9 @@
+[server]
+# Individual drone/field photos, not orthomosaics (see README's scope-cut note) - 200MB/file
+# comfortably covers a single high-res photo without inviting multi-GB uploads this app was
+# never meant to hold entirely in memory.
+maxUploadSize = 200
+
+[theme]
+primaryColor = "#3DBE5B"
+base = "light"

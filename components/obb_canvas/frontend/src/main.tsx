@@ -66,17 +66,34 @@ function ObbCanvas({ args }: { args: ObbCanvasArgs }) {
     setSelectedAnnotationId(null);
   }
 
+  function handleRelabel(classId: number) {
+    if (!selectedAnnotationId) return;
+    emit({ type: "change", id: selectedAnnotationId, patch: { class_id: classId } });
+  }
+
+  // Keyboard shortcuts scoped to *this* component (not the Streamlit page - see the file-level
+  // comment in annotate_tab.py on why page-level shortcuts don't work here) - mirrors the full
+  // app's AnnotateTab.tsx: 1-9 relabels the selected box in place, matching classes by their
+  // position in the sidebar's class list. Unlike the full app, this doesn't also change the
+  // active class for new boxes - that's Python-owned state (the sidebar radio), and round-
+  // tripping it through the bridge is more machinery than this shortcut is worth for now.
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if ((e.key === "Delete" || e.key === "Backspace") && selectedAnnotationId) {
         e.preventDefault();
         handleDelete();
+      } else if (e.key >= "1" && e.key <= "9" && selectedAnnotationId) {
+        const targetClass = args.classes[Number(e.key) - 1];
+        if (targetClass) {
+          e.preventDefault();
+          handleRelabel(targetClass.id);
+        }
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedAnnotationId]);
+  }, [selectedAnnotationId, args.classes]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -100,6 +117,9 @@ function ObbCanvas({ args }: { args: ObbCanvasArgs }) {
         </button>
         {tool === "draw" && args.shape_mode === "obb" && (
           <span style={{ color: "#888" }}>click edge start → edge end → width</span>
+        )}
+        {tool === "select" && selectedAnnotationId && (
+          <span style={{ color: "#888" }}>Delete: remove · 1-9: change class</span>
         )}
       </div>
       <div style={{ height: (args.height || 640) - 40 }}>

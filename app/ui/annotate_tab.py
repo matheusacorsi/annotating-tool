@@ -1,14 +1,17 @@
-"""Tile gallery + drawing canvas. Page-level keyboard shortcuts (tile nav, number-key relabel,
-confirm-tile, VI toggle) don't reliably cross the Streamlit-page/component-iframe boundary, so
-this ships on-screen buttons for all of those instead of hotkeys - an intentional v1 scope cut
-(the canvas component itself still handles Delete/Backspace locally, see main.tsx)."""
+"""Tile gallery + drawing canvas. Page-level keyboard shortcuts (tile nav, confirm-tile, VI
+toggle) don't reliably cross the Streamlit-page/component-iframe boundary, so those ship as
+on-screen buttons instead of hotkeys - an intentional v1 scope cut. Shortcuts that only need to
+work *inside* the canvas (Delete/Backspace to remove the selected box, 1-9 to relabel it) are
+handled entirely client-side in main.tsx instead, where that boundary isn't a problem."""
 
 from __future__ import annotations
 
 import base64
+import io
 from datetime import datetime, timezone
 
 import streamlit as st
+from PIL import Image
 
 from app.annotations import Annotation, TileStatus
 from app.session_state import SessionProject, get_project
@@ -16,6 +19,17 @@ from app.session_state import SessionProject, get_project
 from components.obb_canvas import obb_canvas
 
 _STATUS_FILTERS: list[TileStatus | str] = ["all", "confirmed", "unconfirmed", "empty"]
+
+# The stored/exported tile stays full-quality (JPEG quality=100, no chroma subsampling - see
+# portable_ingest.py) since that's what training/export needs. But that same full-size blob was
+# getting base64-embedded into the canvas component's args and re-sent over the Streamlit
+# WebSocket on *every* rerun - not just tile switches, but every single draw/edit/VI-toggle/etc,
+# since Streamlit's custom-component protocol has no way to skip re-transmitting an unchanged
+# arg. Over a real network (Streamlit Cloud) that's the difference between a snappy click and a
+# noticeable stall; locally it's not felt because localhost round trips are near-instant either
+# way. A lower-quality preview cuts that payload by roughly 3x+ with no effect on annotation
+# correctness (box coordinates are geometry, not pixels) or on what actually gets exported.
+_CANVAS_PREVIEW_QUALITY = 85
 
 
 def _selected_tile_id(project: SessionProject) -> str | None:
@@ -102,8 +116,20 @@ def _apply_event(project: SessionProject, tile_id: str, event: dict) -> None:
     tile_annotations.updated_at = now
 
 
-def _tile_to_data_url(tile_bytes: bytes) -> str:
-    return "data:image/jpeg;base64," + base64.b64encode(tile_bytes).decode("ascii")
+def _tile_preview_data_url(project: SessionProject, tile_id: str) -> str:
+    # Cached per (project_id, tile_id) so the recompression only happens once per tile per
+    # session, not on every rerun - session-local only, matches the app's session-ephemeral
+    # storage (see session_state.clear_project, which evicts this cache too).
+    cache = st.session_state.setdefault("_canvas_preview_cache", {})
+    cache_key = (project.manifest.project_id, tile_id)
+    encoded = cache.get(cache_key)
+    if encoded is None:
+        img = Image.open(io.BytesIO(project.tiles[tile_id])).convert("RGB")
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=_CANVAS_PREVIEW_QUALITY)
+        encoded = base64.b64encode(buf.getvalue()).decode("ascii")
+        cache[cache_key] = encoded
+    return "data:image/jpeg;base64," + encoded
 
 
 def render() -> None:
@@ -143,7 +169,7 @@ def render() -> None:
 
     tile_annotations = project.annotations[tile_id]
     event = obb_canvas(
-        image_url=_tile_to_data_url(project.tiles[tile_id]),
+        image_url=_tile_preview_data_url(project, tile_id),
         annotations=tile_annotations.annotations,
         classes=project.manifest.classes,
         shape_mode=project.manifest.task_type,

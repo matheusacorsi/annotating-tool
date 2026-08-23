@@ -29,5 +29,9 @@ def set_project(project: SessionProject) -> None:
 def clear_project() -> None:
     # Drops every reference to the in-memory tile/thumbnail bytes so they're eligible for GC -
     # this, not any disk cleanup, is what "removed after session" actually means here (see
-    # README for the honest caveat about tab-close timing).
+    # README for the honest caveat about tab-close timing). Also drops the annotate tab's
+    # recompressed-preview cache (see ui/annotate_tab.py) - it's keyed by project_id so a new
+    # project wouldn't collide with stale entries anyway, but there's no reason to keep them
+    # around once their project is gone.
     st.session_state.pop(SESSION_KEY, None)
+    st.session_state.pop("_canvas_preview_cache", None)

@@ -24,10 +24,12 @@ in the full app), and hand a project file back — without installing anything.
 - **No orthomosaic support.** Only individual photos (JPG/PNG/TIFF) can be uploaded and tiled —
   multi-gigabyte orthomosaics aren't practical through a browser upload anyway. If you need to
   tile an orthomosaic, do it in the full app and share the resulting project file instead.
-- **No page-level keyboard shortcuts** (tile navigation, number-key relabeling, confirm-tile).
-  Streamlit's iframe boundary makes these unreliable, so this ships on-screen buttons instead —
-  a deliberate v1 scope cut, not an oversight. (Delete/Backspace to remove a selected box *does*
-  work, since that's handled inside the drawing canvas itself.)
+- **No page-level keyboard shortcuts** (tile navigation, confirm-tile, VI toggle). Streamlit's
+  iframe boundary makes these unreliable, so those ship as on-screen buttons instead — a
+  deliberate v1 scope cut, not an oversight. Shortcuts scoped to the canvas itself work fine,
+  since that boundary isn't a problem there: with a box selected, **Delete/Backspace** removes
+  it and **1–9** relabels it to the Nth class in your class list (same convention as the full
+  app). More of these can be added over time.
 
 ## Nothing is saved server-side
 

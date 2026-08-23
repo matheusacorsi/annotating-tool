@@ -132,6 +132,44 @@ def _tile_preview_data_url(project: SessionProject, tile_id: str) -> str:
     return "data:image/jpeg;base64," + encoded
 
 
+@st.fragment
+def _canvas_fragment(
+    project: SessionProject, tile_id: str, selected_class_id: int, vi_mode: bool, vi_threshold: float
+) -> None:
+    # Every call to obb_canvas() from Python normally triggers a *full app* rerun the instant
+    # the component calls back (Streamlit.setComponentValue) - that's automatic, not something
+    # our own st.rerun() calls control, and a full rerun dims/freezes the whole page (sidebar
+    # gallery, project panel, everything) while it recomputes top to bottom. Fine for an
+    # occasional click, bad for something that fires on every single draw/drag/relabel.
+    # @st.fragment scopes that down: reruns triggered from inside this function only redraw
+    # this function's own output, with no whole-page dimming. Confirm tile (in render(), outside
+    # this fragment) still does a normal full rerun on purpose, since it's an occasional action
+    # and the sidebar gallery's status badges need to pick up the change.
+    tile_annotations = project.annotations[tile_id]
+    event = obb_canvas(
+        image_url=_tile_preview_data_url(project, tile_id),
+        annotations=tile_annotations.annotations,
+        classes=project.manifest.classes,
+        shape_mode=project.manifest.task_type,
+        selected_class_id=selected_class_id,
+        vi_mode=vi_mode,
+        vi_threshold=vi_threshold,
+        height=780,
+        key=f"obb_canvas_{tile_id}",
+    )
+
+    # Streamlit redelivers the *last* component value on every rerun (triggered by any widget,
+    # not just this one) until a genuinely new value is set - dedupe on the per-event nonce so
+    # an unrelated rerun (e.g. toggling VI mode) can never reapply a stale
+    # "create"/"change"/"delete" and double up an edit.
+    nonce_key = f"annotate_last_nonce_{tile_id}"
+    if event is not None and event.get("nonce") != st.session_state.get(nonce_key):
+        st.session_state[nonce_key] = event["nonce"]
+        _apply_event(project, tile_id, event)
+        if event["type"] != "select":
+            st.rerun(scope="fragment")
+
+
 def render() -> None:
     project = get_project()
     if project is None or len(project.tiles) == 0:
@@ -167,26 +205,4 @@ def render() -> None:
             project.annotations[tile_id].updated_at = datetime.now(timezone.utc)
             st.rerun()
 
-    tile_annotations = project.annotations[tile_id]
-    event = obb_canvas(
-        image_url=_tile_preview_data_url(project, tile_id),
-        annotations=tile_annotations.annotations,
-        classes=project.manifest.classes,
-        shape_mode=project.manifest.task_type,
-        selected_class_id=selected_class_id,
-        vi_mode=vi_mode,
-        vi_threshold=vi_threshold,
-        height=780,
-        key=f"obb_canvas_{tile_id}",
-    )
-
-    # Streamlit redelivers the *last* component value on every rerun (triggered by any widget,
-    # not just this one) until a genuinely new value is set - dedupe on the per-event nonce so
-    # an unrelated rerun (e.g. toggling VI mode) can never reapply a stale
-    # "create"/"change"/"delete" and double up an edit.
-    nonce_key = f"annotate_last_nonce_{tile_id}"
-    if event is not None and event.get("nonce") != st.session_state.get(nonce_key):
-        st.session_state[nonce_key] = event["nonce"]
-        _apply_event(project, tile_id, event)
-        if event["type"] != "select":
-            st.rerun()
+    _canvas_fragment(project, tile_id, selected_class_id, vi_mode, vi_threshold)

@@ -80,14 +80,24 @@ def render() -> None:
     _class_editor(project)
 
     st.sidebar.divider()
-    zip_bytes = export_zip(project)
-    st.sidebar.download_button(
-        "⬇️ Export project (.zip)",
-        data=zip_bytes,
-        file_name=f"{project.manifest.name.replace(' ', '_')}.zip",
-        mime="application/zip",
-        key="export_project_btn",
-    )
+    # export_zip() re-zips every tile's full-res JPEG bytes - too expensive to run on every
+    # Streamlit rerun (which happens after *every* annotation edit, not just when the user
+    # actually wants to export). Only build it when asked, and cache the bytes so re-rendering
+    # the download button on subsequent reruns doesn't redo the work; the cache is keyed to
+    # project_id so switching/reloading projects can't hand out a stale zip.
+    cache_key = "export_zip_cache"
+    cached = st.session_state.get(cache_key)
+    if st.sidebar.button("⬇️ Prepare export (.zip)", key="prepare_export_btn"):
+        st.session_state[cache_key] = (project.manifest.project_id, export_zip(project))
+        st.rerun()
+    if cached is not None and cached[0] == project.manifest.project_id:
+        st.sidebar.download_button(
+            "Download project (.zip)",
+            data=cached[1],
+            file_name=f"{project.manifest.name.replace(' ', '_')}.zip",
+            mime="application/zip",
+            key="export_project_btn",
+        )
     if st.sidebar.button("\U0001f5d1️ Clear session / start over", key="clear_session_btn"):
         clear_project()
         st.rerun()

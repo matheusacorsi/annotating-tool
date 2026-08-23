@@ -30,6 +30,9 @@ def _select_tile(tile_id: str) -> None:
 
 
 def _tile_gallery(project: SessionProject) -> None:
+    # Lives in the sidebar (see render()) rather than a main-pane column - a narrow one-tile-
+    # per-row list keeps its footprint minimal so the main pane can give the canvas nearly its
+    # full width, which is the whole point of the drawing surface being here at all.
     status_filter = st.selectbox("Status filter", _STATUS_FILTERS, key="annotate_status_filter")
 
     tile_ids = list(project.tiles.keys())
@@ -41,12 +44,11 @@ def _tile_gallery(project: SessionProject) -> None:
         return
 
     selected = _selected_tile_id(project)
-    cols = st.columns(3)
-    for i, tile_id in enumerate(tile_ids):
-        col = cols[i % 3]
-        col.image(project.thumbnails[tile_id], use_container_width=True)
+    for tile_id in tile_ids:
+        thumb_col, btn_col = st.columns([1, 2])
+        thumb_col.image(project.thumbnails[tile_id], width=56)
         label = ("➤ " if tile_id == selected else "") + tile_id
-        if col.button(label, key=f"select_tile_{tile_id}"):
+        if btn_col.button(label, key=f"select_tile_{tile_id}", width="stretch"):
             _select_tile(tile_id)
             st.rerun()
 
@@ -64,6 +66,7 @@ def _class_selector(project: SessionProject) -> int:
         format_func=lambda cid: names.get(cid, str(cid)),
         index=ids.index(default) if default in ids else 0,
         key="annotate_selected_class_id",
+        horizontal=True,
     )
     return selected
 
@@ -109,53 +112,55 @@ def render() -> None:
         st.info("No tiles yet - import a project or tile some images in the Ingest tab first.")
         return
 
-    gallery_col, canvas_col = st.columns([1, 2])
-
-    with gallery_col:
+    # The gallery lives in the sidebar (not a main-pane column) specifically so the main pane
+    # can dedicate nearly its full width to the canvas - that's the surface people actually
+    # spend their time in, the gallery is just tile navigation.
+    with st.sidebar:
+        st.divider()
+        st.subheader("Tiles")
         _tile_gallery(project)
 
     tile_id = _selected_tile_id(project)
     if tile_id is None:
-        with canvas_col:
-            st.info("Select a tile from the gallery to start annotating.")
+        st.info("Select a tile from the sidebar gallery to start annotating.")
         return
 
-    with canvas_col:
-        top = st.columns([2, 1, 1])
-        with top[0]:
-            selected_class_id = _class_selector(project)
-        with top[1]:
-            vi_mode = st.checkbox("VI overlay", key="annotate_vi_mode")
-            vi_threshold = st.slider(
-                "VI threshold", -2.0, 2.0, 0.0, 0.05, key="annotate_vi_threshold", disabled=not vi_mode
-            )
-        with top[2]:
-            if st.button("✓ Confirm tile", key="confirm_tile_btn"):
-                for a in project.annotations[tile_id].annotations:
-                    a.status = "confirmed"
-                project.annotations[tile_id].updated_at = datetime.now(timezone.utc)
-                st.rerun()
-
-        tile_annotations = project.annotations[tile_id]
-        event = obb_canvas(
-            image_url=_tile_to_data_url(project.tiles[tile_id]),
-            annotations=tile_annotations.annotations,
-            classes=project.manifest.classes,
-            shape_mode=project.manifest.task_type,
-            selected_class_id=selected_class_id,
-            vi_mode=vi_mode,
-            vi_threshold=vi_threshold,
-            height=640,
-            key=f"obb_canvas_{tile_id}",
+    top = st.columns([3, 1, 2, 1])
+    with top[0]:
+        selected_class_id = _class_selector(project)
+    with top[1]:
+        vi_mode = st.checkbox("VI overlay", key="annotate_vi_mode")
+    with top[2]:
+        vi_threshold = st.slider(
+            "VI threshold", -2.0, 2.0, 0.0, 0.05, key="annotate_vi_threshold", disabled=not vi_mode
         )
+    with top[3]:
+        if st.button("✓ Confirm tile", key="confirm_tile_btn", width="stretch"):
+            for a in project.annotations[tile_id].annotations:
+                a.status = "confirmed"
+            project.annotations[tile_id].updated_at = datetime.now(timezone.utc)
+            st.rerun()
 
-        # Streamlit redelivers the *last* component value on every rerun (triggered by any
-        # widget, not just this one) until a genuinely new value is set - dedupe on the
-        # per-event nonce so an unrelated rerun (e.g. toggling VI mode) can never reapply a
-        # stale "create"/"change"/"delete" and double up an edit.
-        nonce_key = f"annotate_last_nonce_{tile_id}"
-        if event is not None and event.get("nonce") != st.session_state.get(nonce_key):
-            st.session_state[nonce_key] = event["nonce"]
-            _apply_event(project, tile_id, event)
-            if event["type"] != "select":
-                st.rerun()
+    tile_annotations = project.annotations[tile_id]
+    event = obb_canvas(
+        image_url=_tile_to_data_url(project.tiles[tile_id]),
+        annotations=tile_annotations.annotations,
+        classes=project.manifest.classes,
+        shape_mode=project.manifest.task_type,
+        selected_class_id=selected_class_id,
+        vi_mode=vi_mode,
+        vi_threshold=vi_threshold,
+        height=780,
+        key=f"obb_canvas_{tile_id}",
+    )
+
+    # Streamlit redelivers the *last* component value on every rerun (triggered by any widget,
+    # not just this one) until a genuinely new value is set - dedupe on the per-event nonce so
+    # an unrelated rerun (e.g. toggling VI mode) can never reapply a stale
+    # "create"/"change"/"delete" and double up an edit.
+    nonce_key = f"annotate_last_nonce_{tile_id}"
+    if event is not None and event.get("nonce") != st.session_state.get(nonce_key):
+        st.session_state[nonce_key] = event["nonce"]
+        _apply_event(project, tile_id, event)
+        if event["type"] != "select":
+            st.rerun()

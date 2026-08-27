@@ -44,12 +44,16 @@ def _import_form() -> None:
 
 def _class_editor(project: SessionProject) -> None:
     st.subheader("Classes")
-    for i, cls in enumerate(project.manifest.classes):
-        col1, col2 = st.columns([5, 1])
-        col1.markdown(
-            f'<span style="color:{cls.color}">●</span> {cls.name}', unsafe_allow_html=True
+    for cls in project.manifest.classes:
+        col1, col2, col3 = st.columns([1, 4, 1])
+        new_color = col1.color_picker(
+            "Color", value=cls.color, key=f"class_color_{cls.id}", label_visibility="collapsed"
         )
-        if col2.button("✕", key=f"remove_class_{cls.id}"):
+        if new_color != cls.color:
+            cls.color = new_color
+            st.rerun()
+        col2.markdown(cls.name)
+        if col3.button("✕", key=f"remove_class_{cls.id}"):
             project.manifest.classes = [c for c in project.manifest.classes if c.id != cls.id]
             st.rerun()
     new_name = st.text_input("New class name", key="new_class_name", label_visibility="collapsed",

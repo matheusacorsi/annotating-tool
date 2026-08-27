@@ -52,7 +52,18 @@ def _class_editor(project: SessionProject) -> None:
         if new_color != cls.color:
             cls.color = new_color
             st.rerun()
-        col2.markdown(cls.name)
+        new_name = col2.text_input(
+            "Name", value=cls.name, key=f"class_name_{cls.id}", label_visibility="collapsed"
+        )
+        # Only apply a non-blank name - an in-progress edit (briefly empty while retyping)
+        # shouldn't wipe out the class name. Stored exactly as typed (not .strip()'d) rather
+        # than normalized, since Streamlit widgets own their session_state value once created -
+        # writing a *different* (trimmed) string back to it in the same run raises
+        # StreamlitAPIException ("cannot be modified after the widget ... is instantiated"),
+        # and there's no other point in the script where it'd be legal to do that sync.
+        if new_name.strip() and new_name != cls.name:
+            cls.name = new_name
+            st.rerun()
         if col3.button("✕", key=f"remove_class_{cls.id}"):
             project.manifest.classes = [c for c in project.manifest.classes if c.id != cls.id]
             st.rerun()
